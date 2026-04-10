@@ -271,27 +271,36 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-catalogue').addEventListener('click', () => setMode('catalogue'));
   $('btn-save-to-catalogue').addEventListener('click', saveToCatalogue);
 
-  // Try localStorage first, then story.json, then built-in default
-  const lsSaved = loadCurrentStory();
-  if (lsSaved) {
-    story         = lsSaved;
-    currentNodeId = story.startNodeId;
-    $('story-title').textContent = story.title || 'Untitled';
-    setMode('play');
-  } else {
-    fetch('./story.json')
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(data => {
-        story         = data;
-        currentNodeId = story.startNodeId;
-        $('story-title').textContent = story.title || 'Untitled';
-        setMode('play');
-      })
-      .catch(() => {
-        // No story.json found (or file:// protocol) — use built-in default
-        setMode('play');
-      });
+  // Load story data, then wait for splash click before starting
+  function startStory() {
+    const lsSaved = loadCurrentStory();
+    if (lsSaved) {
+      story         = lsSaved;
+      currentNodeId = story.startNodeId;
+      $('story-title').textContent = story.title || 'Untitled';
+      setMode('play');
+    } else {
+      fetch('./story.json')
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(data => {
+          story         = data;
+          currentNodeId = story.startNodeId;
+          $('story-title').textContent = story.title || 'Untitled';
+          setMode('play');
+        })
+        .catch(() => {
+          // No story.json found (or file:// protocol) — use built-in default
+          setMode('play');
+        });
+    }
   }
+
+  $('splash-btn').addEventListener('click', () => {
+    const splash = $('splash');
+    splash.classList.add('hidden');
+    splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+    startStory();
+  });
 });
 
 // ============================================================
