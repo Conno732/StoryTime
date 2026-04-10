@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adventure Maker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- Top bar -->
+    <div id="topbar">
+      <span id="story-title" title="Click to rename">The Forest Path</span>
+      <div id="topbar-tabs">
+        <button id="btn-play" class="tab active">Play</button>
+        <button id="btn-edit" class="tab">Edit</button>
+      </div>
+      <div id="topbar-io">
+        <button id="btn-import" class="btn-secondary">Import</button>
+        <button id="btn-export" class="btn-secondary">Export</button>
+        <input type="file" id="file-input" accept=".json" style="display:none">
+      </div>
+    </div>
+
+    <!-- ===================== PLAY VIEW ===================== -->
+    <div id="play-view" class="view active">
+      <div id="game-card">
+        <img id="game-image" alt="">
+        <p id="game-text"></p>
+        <div id="game-options"></div>
+      </div>
+    </div>
+
+    <!-- ===================== EDIT VIEW ===================== -->
+    <div id="edit-view" class="view">
+
+      <div id="editor-sidebar">
+        <div id="sidebar-scroll">
+          <p id="sidebar-hint">Select a node to edit it, or add a new one.</p>
+          <div id="node-editor"></div>
+        </div>
+        <div id="sidebar-footer">
+          <button id="btn-add-node" class="btn-accent">+ Add Node</button>
+          <button id="btn-set-start" class="btn-secondary" disabled>Set as Start</button>
+          <button id="btn-delete-node" class="btn-danger" disabled>Delete</button>
+        </div>
+      </div>
+
+      <div id="editor-canvas-wrap">
+        <div id="editor-canvas">
+          <svg id="editor-svg" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6"
+                      refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#7c5cbf"/>
+              </marker>
+            </defs>
+          </svg>
+          <!-- node divs injected here -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
