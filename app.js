@@ -25,63 +25,15 @@
 // DEFAULT STORY
 // ============================================================
 const DEFAULT_STORY = {
-  title: "The Forest Path",
+  title: "click here to change title",
   startNodeId: "n1",
   nodes: {
     n1: {
       id: "n1", x: 60, y: 100,
-      text: "You stand at the edge of a dark forest. The trees loom overhead, their branches tangled like grasping fingers. A narrow path winds into the shadows ahead.",
+      text: "No story found, feel free to make one!",
       image: null,
       options: [
-        { text: "Follow the path into the forest", targetNodeId: "n2" },
-        { text: "Turn back toward town",           targetNodeId: "n3" }
       ]
-    },
-    n2: {
-      id: "n2", x: 380, y: 40,
-      text: "You venture deeper into the forest. The path winds between ancient oaks. Soon you hear the sound of running water nearby.",
-      image: null,
-      options: [
-        { text: "Follow the sound of water", targetNodeId: "n4" },
-        { text: "Keep to the path",           targetNodeId: "n5" }
-      ]
-    },
-    n3: {
-      id: "n3", x: 380, y: 260,
-      text: "You return to the safety of town. The innkeeper gives you a warm meal and a soft bed for the night. Perhaps tomorrow you will be braver.",
-      image: null,
-      options: []
-    },
-    n4: {
-      id: "n4", x: 700, y: 0,
-      text: "You find a crystal-clear stream. An old woman sits beside it, holding a small glowing vial. She smiles and offers it to you.",
-      image: null,
-      options: [
-        { text: "Drink from the vial",    targetNodeId: "n6" },
-        { text: "Decline and move on",    targetNodeId: "n5" }
-      ]
-    },
-    n5: {
-      id: "n5", x: 700, y: 230,
-      text: "The path opens into a clearing. An ancient stone tower stands before you, its door slightly ajar. Ivy crawls up its walls.",
-      image: null,
-      options: [
-        { text: "Enter the tower", targetNodeId: "n7" }
-      ]
-    },
-    n6: {
-      id: "n6", x: 1020, y: 0,
-      text: "The liquid tastes of starlight and pine. Warmth floods through you. The old woman smiles — you have been blessed with good fortune on your journey.",
-      image: null,
-      options: [
-        { text: "Continue your journey", targetNodeId: "n5" }
-      ]
-    },
-    n7: {
-      id: "n7", x: 1020, y: 230,
-      text: "Inside the tower, centuries of forgotten knowledge await. You spend years here, mastering ancient arts. Your adventure... is only just beginning.",
-      image: null,
-      options: []
     }
   }
 };
