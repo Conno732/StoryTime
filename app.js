@@ -12,7 +12,9 @@
          x: number,          // editor canvas position
          y: number,
          text: string,
-         image: string|null, // base64 data URL
+         image: string|null,      // base64 data URL
+         enterSound: string|null, // base64 audio URL — plays once on node enter
+         music: string|null,      // base64 audio URL — loops as background; null = no change
          options: Array<{ text: string, targetNodeId: string }>
        }
      }
@@ -92,6 +94,33 @@ let mode          = 'play';
 let currentNodeId = story.startNodeId;
 let selectedNodeId = null;
 let dragState     = null; // { nodeId, startMouseX, startMouseY, origX, origY }
+let panState      = null; // { startMouseX, startMouseY, origPanX, origPanY }
+let panX          = 40;
+let panY          = 40;
+let zoomLevel     = 1;
+
+// Audio
+let musicAudio = null; // currently looping background <Audio>
+let musicSrc   = null; // src of current track (to avoid restarting same track)
+let musicMuted = false;
+
+// ============================================================
+// LOCAL STORAGE
+// ============================================================
+const LS_CURRENT   = 'adventure_current';
+const LS_CATALOGUE = 'adventure_catalogue';
+
+let saveTimer = null;
+function markDirty() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveCurrentStory, 800);
+}
+function saveCurrentStory() {
+  try { localStorage.setItem(LS_CURRENT, JSON.stringify(story)); } catch (_) {}
+}
+function loadCurrentStory() {
+  try { const r = localStorage.getItem(LS_CURRENT); return r ? JSON.parse(r) : null; } catch (_) { return null; }
+}
 
 // ============================================================
 // UTILITIES
@@ -111,9 +140,61 @@ function genId() {
   return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 }
 
+function applyTransform() {
+  $('editor-canvas').style.transform =
+    `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+  // Shift the dot grid so it appears attached to the canvas
+  const dotSpacing = 28 * zoomLevel;
+  const ox = panX % dotSpacing;
+  const oy = panY % dotSpacing;
+  $('editor-canvas-wrap').style.backgroundSize     = `${dotSpacing}px ${dotSpacing}px`;
+  $('editor-canvas-wrap').style.backgroundPosition = `${ox}px ${oy}px`;
+}
+
 function nodeLabel(node) {
   const preview = node.text ? node.text.slice(0, 28) : '(empty)';
   return `${node.id}: ${preview}${node.text.length > 28 ? '…' : ''}`;
+}
+
+// ============================================================
+// AUDIO
+// ============================================================
+function playNodeAudio(node) {
+  // One-shot enter sound
+  if (node.enterSound) {
+    const sfx = new Audio(node.enterSound);
+    sfx.volume = musicMuted ? 0 : 1;
+    sfx.play().catch(() => {});
+  }
+
+  // Background music — only act when node explicitly sets a track
+  if (node.music != null) {
+    if (node.music === musicSrc) return; // same track already playing
+    if (musicAudio) { musicAudio.pause(); musicAudio = null; }
+    musicSrc = node.music;
+
+    if (node.music) {
+      musicAudio = new Audio(node.music);
+      musicAudio.loop   = true;
+      musicAudio.volume = musicMuted ? 0 : 0.5;
+      musicAudio.play().catch(() => {});
+    }
+    updateMusicPlayer();
+  }
+}
+
+function stopMusic() {
+  if (musicAudio) { musicAudio.pause(); musicAudio = null; }
+  musicSrc = null;
+  updateMusicPlayer();
+}
+
+function updateMusicPlayer() {
+  const player  = $('music-player');
+  const muteBtn = $('btn-music-mute');
+  if (!player) return;
+  player.classList.toggle('visible', !!musicAudio);
+  if (muteBtn) muteBtn.textContent = musicMuted ? '🔇' : '🔊';
 }
 
 // ============================================================
@@ -133,11 +214,78 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-set-start').addEventListener('click',  setAsStart);
   $('btn-delete-node').addEventListener('click', deleteSelectedNode);
 
+  // Canvas toolbar
+  $('canvas-btn-add').addEventListener('click',    addNode);
+  $('canvas-btn-start').addEventListener('click',  setAsStart);
+  $('canvas-btn-delete').addEventListener('click', deleteSelectedNode);
+
+  // Music player
+  $('btn-music-mute').addEventListener('click', () => {
+    musicMuted = !musicMuted;
+    if (musicAudio) musicAudio.volume = musicMuted ? 0 : 0.5;
+    updateMusicPlayer();
+  });
+
   // Global drag handlers
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup',   onMouseUp);
 
-  setMode('play');
+  // Canvas pan — on the wrap so it has a full hit area.
+  // Nodes and toolbar buttons call stopPropagation, so we guard with closest() too.
+  $('editor-canvas-wrap').addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.editor-node') || e.target.closest('#canvas-toolbar')) return;
+    panState = {
+      startMouseX: e.clientX,
+      startMouseY: e.clientY,
+      origPanX:    panX,
+      origPanY:    panY
+    };
+    $('editor-canvas-wrap').style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  // Zoom on scroll wheel
+  $('editor-canvas-wrap').addEventListener('wheel', e => {
+    e.preventDefault();
+    const wrap     = $('editor-canvas-wrap');
+    const rect     = wrap.getBoundingClientRect();
+    const mouseX   = e.clientX - rect.left;
+    const mouseY   = e.clientY - rect.top;
+    const factor   = e.deltaY < 0 ? 1.1 : (1 / 1.1);
+    const newZoom  = Math.max(0.15, Math.min(4, zoomLevel * factor));
+    // Zoom toward the cursor: keep the canvas point under the mouse fixed
+    panX      = mouseX - (mouseX - panX) * (newZoom / zoomLevel);
+    panY      = mouseY - (mouseY - panY) * (newZoom / zoomLevel);
+    zoomLevel = newZoom;
+    applyTransform();
+  }, { passive: false });
+
+  // Catalogue
+  $('btn-catalogue').addEventListener('click', () => setMode('catalogue'));
+  $('btn-save-to-catalogue').addEventListener('click', saveToCatalogue);
+
+  // Try localStorage first, then story.json, then built-in default
+  const lsSaved = loadCurrentStory();
+  if (lsSaved) {
+    story         = lsSaved;
+    currentNodeId = story.startNodeId;
+    $('story-title').textContent = story.title || 'Untitled';
+    setMode('play');
+  } else {
+    fetch('./story.json')
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data => {
+        story         = data;
+        currentNodeId = story.startNodeId;
+        $('story-title').textContent = story.title || 'Untitled';
+        setMode('play');
+      })
+      .catch(() => {
+        // No story.json found (or file:// protocol) — use built-in default
+        setMode('play');
+      });
+  }
 });
 
 // ============================================================
@@ -147,14 +295,22 @@ function setMode(m) {
   mode = m;
   $('play-view').classList.toggle('active', m === 'play');
   $('edit-view').classList.toggle('active', m === 'edit');
-  $('btn-play').classList.toggle('active',  m === 'play');
-  $('btn-edit').classList.toggle('active',  m === 'edit');
+  $('btn-play').classList.toggle('active',       m === 'play');
+  $('btn-edit').classList.toggle('active',       m === 'edit');
+  $('btn-catalogue').classList.toggle('active',  m === 'catalogue');
+  $('catalogue-view').classList.toggle('active', m === 'catalogue');
 
   if (m === 'play') {
+    stopMusic();
     currentNodeId = story.startNodeId;
     renderNode();
-  } else {
+  } else if (m === 'edit') {
+    stopMusic();
+    applyTransform();
     renderEditor();
+  } else if (m === 'catalogue') {
+    stopMusic();
+    renderCatalogue();
   }
 }
 
@@ -171,6 +327,9 @@ function renderNode() {
     $('game-options').innerHTML = '';
     return;
   }
+
+  // Audio
+  playNodeAudio(node);
 
   // Image
   const img = $('game-image');
@@ -354,23 +513,33 @@ function renderConnections() {
 // EDITOR — drag
 // ============================================================
 function onMouseMove(e) {
-  if (!dragState) return;
+  if (dragState) {
+    const node = story.nodes[dragState.nodeId];
+    // Divide by zoomLevel so dragging feels 1:1 regardless of zoom
+    node.x = Math.max(0, dragState.origX + (e.clientX - dragState.startMouseX) / zoomLevel);
+    node.y = Math.max(0, dragState.origY + (e.clientY - dragState.startMouseY) / zoomLevel);
 
-  const node = story.nodes[dragState.nodeId];
-  node.x = Math.max(0, dragState.origX + (e.clientX - dragState.startMouseX));
-  node.y = Math.max(0, dragState.origY + (e.clientY - dragState.startMouseY));
-
-  const div = $('editor-canvas').querySelector(`[data-node-id="${dragState.nodeId}"]`);
-  if (div) {
-    div.style.left = node.x + 'px';
-    div.style.top  = node.y + 'px';
+    const div = $('editor-canvas').querySelector(`[data-node-id="${dragState.nodeId}"]`);
+    if (div) {
+      div.style.left = node.x + 'px';
+      div.style.top  = node.y + 'px';
+    }
+    renderConnections();
   }
 
-  renderConnections();
+  if (panState) {
+    panX = panState.origPanX + (e.clientX - panState.startMouseX);
+    panY = panState.origPanY + (e.clientY - panState.startMouseY);
+    applyTransform();
+  }
 }
 
 function onMouseUp() {
   dragState = null;
+  if (panState) {
+    $('editor-canvas-wrap').style.cursor = '';
+    panState = null;
+  }
 }
 
 // ============================================================
@@ -385,8 +554,48 @@ function selectNode(nodeId) {
 
   $('btn-set-start').disabled  = !nodeId;
   $('btn-delete-node').disabled = !nodeId;
+  $('canvas-btn-start').disabled  = !nodeId;
+  $('canvas-btn-delete').disabled = !nodeId;
 
   renderSidebar();
+}
+
+// ============================================================
+// EDITOR — sidebar helpers
+// ============================================================
+function buildAudioRow(node, field, label) {
+  const row  = el('div', 'form-row');
+  row.appendChild(el('label', '', label));
+
+  const area       = el('div', 'img-upload-area');
+  const fileInput  = el('input');
+  fileInput.type   = 'file';
+  fileInput.accept = 'audio/*';
+  fileInput.style.display = 'none';
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => { node[field] = ev.target.result; renderSidebar(); };
+    reader.readAsDataURL(file);
+  });
+
+  const btns      = el('div', 'img-btns');
+  const uploadBtn = el('button', 'btn-secondary', node[field] ? 'Change' : 'Upload');
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  btns.appendChild(uploadBtn);
+  btns.appendChild(fileInput);
+
+  if (node[field]) {
+    btns.appendChild(el('span', 'audio-set-label', '♪ set'));
+    const removeBtn = el('button', 'btn-danger-sm', 'Remove');
+    removeBtn.addEventListener('click', () => { node[field] = null; renderSidebar(); });
+    btns.appendChild(removeBtn);
+  }
+
+  area.appendChild(btns);
+  row.appendChild(area);
+  return row;
 }
 
 // ============================================================
@@ -477,6 +686,12 @@ function renderSidebar() {
   imgRow.appendChild(imgArea);
   editor.appendChild(imgRow);
 
+  // ---- Enter Sound ----
+  editor.appendChild(buildAudioRow(node, 'enterSound', 'Enter Sound'));
+
+  // ---- Background Music ----
+  editor.appendChild(buildAudioRow(node, 'music', 'Background Music'));
+
   // ---- Options ----
   const optRow  = el('div', 'form-row');
   optRow.appendChild(el('label', '', 'Options'));
@@ -543,10 +758,11 @@ function renderSidebar() {
 function addNode() {
   const id   = genId();
   const wrap = $('editor-canvas-wrap');
-  const cx   = wrap.scrollLeft + wrap.clientWidth  / 2 - 110;
-  const cy   = wrap.scrollTop  + wrap.clientHeight / 2 - 60;
+  // Convert the visible center of the wrap into canvas coordinates
+  const cx   = (wrap.clientWidth  / 2 - panX) / zoomLevel - 110;
+  const cy   = (wrap.clientHeight / 2 - panY) / zoomLevel - 60;
 
-  story.nodes[id] = { id, x: cx, y: cy, text: '', image: null, options: [] };
+  story.nodes[id] = { id, x: cx, y: cy, text: '', image: null, enterSound: null, music: null, options: [] };
 
   if (!story.startNodeId) story.startNodeId = id;
 
@@ -573,8 +789,10 @@ function deleteSelectedNode() {
   delete story.nodes[selectedNodeId];
 
   selectedNodeId = null;
-  $('btn-set-start').disabled  = true;
-  $('btn-delete-node').disabled = true;
+  $('btn-set-start').disabled      = true;
+  $('btn-delete-node').disabled    = true;
+  $('canvas-btn-start').disabled   = true;
+  $('canvas-btn-delete').disabled  = true;
   renderEditor();
 }
 

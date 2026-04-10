@@ -30,6 +30,11 @@
         <p id="game-text"></p>
         <div id="game-options"></div>
       </div>
+      <div id="music-player">
+        <span class="music-note">♪</span>
+        <span class="music-label">Music</span>
+        <button id="btn-music-mute" title="Mute / unmute">🔊</button>
+      </div>
     </div>
 
     <!-- ===================== EDIT VIEW ===================== -->
@@ -48,6 +53,11 @@
       </div>
 
       <div id="editor-canvas-wrap">
+        <div id="canvas-toolbar">
+          <button id="canvas-btn-add"    class="canvas-tool-btn" title="Add node">+</button>
+          <button id="canvas-btn-start"  class="canvas-tool-btn canvas-tool-node" title="Set as start" disabled>⚑</button>
+          <button id="canvas-btn-delete" class="canvas-tool-btn canvas-tool-node canvas-tool-danger" title="Delete node" disabled>🗑</button>
+        </div>
         <div id="editor-canvas">
           <svg id="editor-svg" xmlns="http://www.w3.org/2000/svg">
             <defs>
