@@ -121,8 +121,6 @@ button { cursor: pointer; font-family: inherit; }
 
 #game-image {
   width: 100%;
-  max-height: 340px;
-  object-fit: cover;
   display: none;
   border-bottom: 1px solid var(--border);
 }
@@ -304,6 +302,103 @@ button { cursor: pointer; font-family: inherit; }
   transition: all .15s;
 }
 .btn-danger-sm:hover { background: var(--danger); color: #fff; }
+
+/* Drawing modal */
+.draw-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.draw-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+}
+
+.draw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.draw-tool-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .78rem;
+  color: var(--text2);
+}
+
+.draw-color-picker {
+  width: 32px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.draw-size-slider {
+  width: 80px;
+  accent-color: var(--accent2);
+}
+
+.draw-tool-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text2);
+  padding: 5px 10px;
+  font-size: .78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all .15s;
+}
+.draw-tool-btn:hover { border-color: var(--text2); color: var(--text); }
+.draw-tool-btn.draw-tool-active { border-color: var(--accent2); color: var(--accent2); }
+.draw-tool-btn.draw-tool-danger { border-color: var(--danger); color: var(--danger); }
+.draw-tool-btn.draw-tool-danger:hover { background: var(--danger); color: #fff; }
+
+.draw-canvas {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: crosshair;
+  display: block;
+  max-width: 100%;
+}
+
+.draw-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-primary-sm {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: #fff;
+  padding: 5px 12px;
+  font-size: .78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-primary-sm:hover { background: var(--accent2); border-color: var(--accent2); }
+
+.draw-cancel-btn { font-size: .78rem; padding: 5px 12px; }
 
 /* Options list */
 .options-editor-list { display: flex; flex-direction: column; gap: 8px; }
@@ -570,6 +665,84 @@ button { cursor: pointer; font-family: inherit; }
   color: var(--accent2);
   align-self: center;
   white-space: nowrap;
+}
+
+/* ============================================================
+   CATALOGUE VIEW
+   ============================================================ */
+#catalogue-view {
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 24px;
+  gap: 0;
+  align-items: center;
+}
+
+#catalogue-toolbar {
+  width: 100%;
+  max-width: 680px;
+  margin-bottom: 20px;
+}
+
+#catalogue-toolbar .btn-accent {
+  width: auto;
+  padding: 9px 22px;
+}
+
+#catalogue-list {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.catalogue-empty {
+  color: var(--text2);
+  font-style: italic;
+  font-size: .9rem;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.catalogue-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  transition: border-color .15s;
+}
+.catalogue-card:hover { border-color: var(--accent); }
+
+.catalogue-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.catalogue-title {
+  font-size: .95rem;
+  color: var(--text);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.catalogue-meta {
+  font-size: .75rem;
+  color: var(--text2);
+}
+
+.catalogue-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* ============================================================

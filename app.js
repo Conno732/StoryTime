@@ -103,6 +103,7 @@ let zoomLevel     = 1;
 let musicAudio = null; // currently looping background <Audio>
 let musicSrc   = null; // src of current track (to avoid restarting same track)
 let musicMuted = false;
+let sfxAudio   = null; // currently playing enter-sound (cancelled on next node enter)
 
 // ============================================================
 // LOCAL STORAGE
@@ -160,11 +161,15 @@ function nodeLabel(node) {
 // AUDIO
 // ============================================================
 function playNodeAudio(node) {
+  // Cancel any still-playing enter sound from the previous node
+  if (sfxAudio) { sfxAudio.pause(); sfxAudio = null; }
+
   // One-shot enter sound
   if (node.enterSound) {
-    const sfx = new Audio(node.enterSound);
-    sfx.volume = musicMuted ? 0 : 1;
-    sfx.play().catch(() => {});
+    sfxAudio = new Audio(node.enterSound);
+    sfxAudio.volume = musicMuted ? 0 : 1;
+    sfxAudio.play().catch(() => {});
+    sfxAudio.addEventListener('ended', () => { sfxAudio = null; });
   }
 
   // Background music — only act when node explicitly sets a track
@@ -184,6 +189,7 @@ function playNodeAudio(node) {
 }
 
 function stopMusic() {
+  if (sfxAudio)   { sfxAudio.pause();   sfxAudio   = null; }
   if (musicAudio) { musicAudio.pause(); musicAudio = null; }
   musicSrc = null;
   updateMusicPlayer();
@@ -374,6 +380,25 @@ function renderEditor() {
 // ============================================================
 // EDITOR — graph canvas
 // ============================================================
+function refreshNodeCardOptions(node) {
+  const card = $('editor-canvas').querySelector(`[data-node-id="${node.id}"]`);
+  if (!card) return;
+  const existing = card.querySelector('.node-options-list');
+  if (existing) existing.remove();
+
+  if (node.options.length > 0) {
+    const list = el('div', 'node-options-list');
+    node.options.forEach(opt => {
+      const text = opt.text
+        ? opt.text.slice(0, 36) + (opt.text.length > 36 ? '…' : '')
+        : '<em style="opacity:.4">untitled option</em>';
+      list.appendChild(el('div', 'node-option-preview',
+        `<span class="opt-arrow">→</span>${text}`));
+    });
+    card.appendChild(list);
+  }
+}
+
 function renderGraph() {
   const canvas = $('editor-canvas');
 
@@ -535,6 +560,7 @@ function onMouseMove(e) {
 }
 
 function onMouseUp() {
+  if (dragState) markDirty();
   dragState = null;
   if (panState) {
     $('editor-canvas-wrap').style.cursor = '';
@@ -561,6 +587,161 @@ function selectNode(nodeId) {
 }
 
 // ============================================================
+// DRAWING MODAL
+// ============================================================
+function openDrawingModal(node) {
+  // Overlay
+  const overlay = el('div', 'draw-overlay');
+
+  const modal = el('div', 'draw-modal');
+
+  // Toolbar
+  const toolbar = el('div', 'draw-toolbar');
+
+  // Color picker
+  const colorLabel = el('label', 'draw-tool-label', 'Color');
+  const colorPicker = el('input');
+  colorPicker.type  = 'color';
+  colorPicker.value = '#e2e2f0';
+  colorPicker.className = 'draw-color-picker';
+  colorLabel.appendChild(colorPicker);
+
+  // Brush size
+  const sizeLabel = el('label', 'draw-tool-label', 'Size');
+  const sizeSlider = el('input');
+  sizeSlider.type  = 'range';
+  sizeSlider.min   = '1';
+  sizeSlider.max   = '40';
+  sizeSlider.value = '4';
+  sizeSlider.className = 'draw-size-slider';
+  sizeLabel.appendChild(sizeSlider);
+
+  // Tool buttons
+  const penBtn    = el('button', 'draw-tool-btn draw-tool-active', 'Pen');
+  const eraserBtn = el('button', 'draw-tool-btn', 'Eraser');
+  const clearBtn  = el('button', 'draw-tool-btn draw-tool-danger', 'Clear');
+
+  toolbar.appendChild(colorLabel);
+  toolbar.appendChild(sizeLabel);
+  toolbar.appendChild(penBtn);
+  toolbar.appendChild(eraserBtn);
+  toolbar.appendChild(clearBtn);
+
+  // Canvas
+  const canvas = document.createElement('canvas');
+  canvas.width  = 680;
+  canvas.height = 340;
+  canvas.className = 'draw-canvas';
+  const ctx = canvas.getContext('2d');
+
+  // Fill with dark background matching the app theme
+  ctx.fillStyle = '#16161f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // If there's an existing image, draw it in
+  if (node.image) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.src = node.image;
+  }
+
+  // Drawing state
+  let drawing = false;
+  let tool = 'pen';
+  let lastX = 0, lastY = 0;
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const src = e.touches ? e.touches[0] : e;
+    return {
+      x: (src.clientX - rect.left) * scaleX,
+      y: (src.clientY - rect.top)  * scaleY,
+    };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    const pos = getPos(e);
+    lastX = pos.x; lastY = pos.y;
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, (tool === 'eraser' ? +sizeSlider.value * 2 : +sizeSlider.value) / 2, 0, Math.PI * 2);
+    ctx.fillStyle = tool === 'eraser' ? '#16161f' : colorPicker.value;
+    ctx.fill();
+  }
+
+  function moveDraw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = tool === 'eraser' ? '#16161f' : colorPicker.value;
+    ctx.lineWidth   = tool === 'eraser' ? +sizeSlider.value * 2 : +sizeSlider.value;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.stroke();
+    lastX = pos.x; lastY = pos.y;
+  }
+
+  function endDraw() { drawing = false; }
+
+  canvas.addEventListener('mousedown',  startDraw);
+  canvas.addEventListener('mousemove',  moveDraw);
+  canvas.addEventListener('mouseup',    endDraw);
+  canvas.addEventListener('mouseleave', endDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove',  moveDraw,  { passive: false });
+  canvas.addEventListener('touchend',   endDraw);
+
+  penBtn.addEventListener('click', () => {
+    tool = 'pen';
+    penBtn.classList.add('draw-tool-active');
+    eraserBtn.classList.remove('draw-tool-active');
+  });
+  eraserBtn.addEventListener('click', () => {
+    tool = 'eraser';
+    eraserBtn.classList.add('draw-tool-active');
+    penBtn.classList.remove('draw-tool-active');
+  });
+  clearBtn.addEventListener('click', () => {
+    ctx.fillStyle = '#16161f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  });
+
+  // Footer buttons
+  const footer = el('div', 'draw-footer');
+  const saveBtn   = el('button', 'btn-primary-sm', 'Save as image');
+  const cancelBtn = el('button', 'btn-secondary draw-cancel-btn', 'Cancel');
+
+  saveBtn.addEventListener('click', () => {
+    node.image = canvas.toDataURL('image/png');
+    markDirty();
+    document.body.removeChild(overlay);
+    renderEditor();
+  });
+  cancelBtn.addEventListener('click', () => document.body.removeChild(overlay));
+
+  footer.appendChild(cancelBtn);
+  footer.appendChild(saveBtn);
+
+  modal.appendChild(toolbar);
+  modal.appendChild(canvas);
+  modal.appendChild(footer);
+  overlay.appendChild(modal);
+
+  // Close on backdrop click
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) document.body.removeChild(overlay);
+  });
+
+  document.body.appendChild(overlay);
+}
+
+// ============================================================
 // EDITOR — sidebar helpers
 // ============================================================
 function buildAudioRow(node, field, label) {
@@ -576,7 +757,7 @@ function buildAudioRow(node, field, label) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = ev => { node[field] = ev.target.result; renderSidebar(); };
+    reader.onload = ev => { node[field] = ev.target.result; markDirty(); renderSidebar(); };
     reader.readAsDataURL(file);
   });
 
@@ -589,7 +770,7 @@ function buildAudioRow(node, field, label) {
   if (node[field]) {
     btns.appendChild(el('span', 'audio-set-label', '♪ set'));
     const removeBtn = el('button', 'btn-danger-sm', 'Remove');
-    removeBtn.addEventListener('click', () => { node[field] = null; renderSidebar(); });
+    removeBtn.addEventListener('click', () => { node[field] = null; markDirty(); renderSidebar(); });
     btns.appendChild(removeBtn);
   }
 
@@ -632,6 +813,7 @@ function renderSidebar() {
   textarea.value = node.text;
   textarea.addEventListener('input', () => {
     node.text = textarea.value;
+    markDirty();
     // Live-update the card preview without full re-render
     const card = $('editor-canvas').querySelector(`[data-node-id="${node.id}"] .node-text-preview`);
     if (card) card.innerHTML = node.text
@@ -662,6 +844,7 @@ function renderSidebar() {
     const reader = new FileReader();
     reader.onload = ev => {
       node.image = ev.target.result;
+      markDirty();
       renderEditor(); // rebuild card + sidebar with image
     };
     reader.readAsDataURL(file);
@@ -673,10 +856,15 @@ function renderSidebar() {
   btns.appendChild(uploadBtn);
   btns.appendChild(imgFileInput);
 
+  const drawBtn = el('button', 'btn-secondary', 'Draw');
+  drawBtn.addEventListener('click', () => openDrawingModal(node));
+  btns.appendChild(drawBtn);
+
   if (node.image) {
     const removeImgBtn = el('button', 'btn-danger-sm', 'Remove');
     removeImgBtn.addEventListener('click', () => {
       node.image = null;
+      markDirty();
       renderEditor();
     });
     btns.appendChild(removeImgBtn);
@@ -708,6 +896,8 @@ function renderSidebar() {
     textInput.value       = opt.text;
     textInput.addEventListener('input', () => {
       opt.text = textInput.value;
+      markDirty();
+      refreshNodeCardOptions(node);
       requestAnimationFrame(renderConnections);
     });
 
@@ -724,6 +914,8 @@ function renderSidebar() {
     });
     targetSel.addEventListener('change', () => {
       opt.targetNodeId = targetSel.value;
+      markDirty();
+      refreshNodeCardOptions(node);
       requestAnimationFrame(renderConnections);
     });
 
@@ -732,6 +924,7 @@ function renderSidebar() {
     removeBtn.title = 'Remove option';
     removeBtn.addEventListener('click', () => {
       node.options.splice(i, 1);
+      markDirty();
       renderEditor();
     });
 
@@ -744,6 +937,7 @@ function renderSidebar() {
   const addOptBtn = el('button', 'btn-add-opt', '+ Add option');
   addOptBtn.addEventListener('click', () => {
     node.options.push({ text: '', targetNodeId: '' });
+    markDirty();
     renderEditor();
   });
 
@@ -765,7 +959,7 @@ function addNode() {
   story.nodes[id] = { id, x: cx, y: cy, text: '', image: null, enterSound: null, music: null, options: [] };
 
   if (!story.startNodeId) story.startNodeId = id;
-
+  markDirty();
   renderGraph();
   selectNode(id);
 }
@@ -774,6 +968,7 @@ function setAsStart() {
   if (!selectedNodeId) return;
   story.startNodeId = selectedNodeId;
   currentNodeId     = selectedNodeId;
+  markDirty();
   renderGraph();
   renderSidebar();
 }
@@ -793,6 +988,7 @@ function deleteSelectedNode() {
   $('btn-delete-node').disabled    = true;
   $('canvas-btn-start').disabled   = true;
   $('canvas-btn-delete').disabled  = true;
+  markDirty();
   renderEditor();
 }
 
@@ -821,6 +1017,7 @@ function importStory(e) {
       currentNodeId = story.startNodeId;
       selectedNodeId = null;
       $('story-title').textContent = story.title || 'Untitled';
+      saveCurrentStory();
       setMode(mode);
     } catch (err) {
       alert('Could not parse story file:\n' + err.message);
@@ -835,9 +1032,82 @@ function editTitle() {
   if (next !== null && next.trim() !== '') {
     story.title = next.trim();
     $('story-title').textContent = story.title;
+    markDirty();
   }
 }
 
 function sanitizeFilename(s) {
   return s.replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'story';
+}
+
+// ============================================================
+// CATALOGUE
+// ============================================================
+function loadCatalogue() {
+  try { const r = localStorage.getItem(LS_CATALOGUE); return r ? JSON.parse(r) : []; } catch (_) { return []; }
+}
+
+function saveCatalogue(catalogue) {
+  try { localStorage.setItem(LS_CATALOGUE, JSON.stringify(catalogue)); } catch (_) {}
+}
+
+function saveToCatalogue() {
+  const catalogue = loadCatalogue();
+  catalogue.unshift({
+    id:      Date.now().toString(),
+    title:   story.title || 'Untitled',
+    savedAt: new Date().toISOString(),
+    story:   deepClone(story)
+  });
+  saveCatalogue(catalogue);
+  renderCatalogue();
+}
+
+function deleteFromCatalogue(id) {
+  saveCatalogue(loadCatalogue().filter(e => e.id !== id));
+  renderCatalogue();
+}
+
+function loadFromCatalogue(entry) {
+  story          = deepClone(entry.story);
+  currentNodeId  = story.startNodeId;
+  selectedNodeId = null;
+  $('story-title').textContent = story.title || 'Untitled';
+  saveCurrentStory();
+  setMode('play');
+}
+
+function renderCatalogue() {
+  const list      = $('catalogue-list');
+  list.innerHTML  = '';
+  const catalogue = loadCatalogue();
+
+  if (catalogue.length === 0) {
+    list.appendChild(el('p', 'catalogue-empty',
+      'No saved stories yet. Hit "Save Current Story" to add one.'));
+    return;
+  }
+
+  catalogue.forEach(entry => {
+    const card    = el('div', 'catalogue-card');
+    const info    = el('div', 'catalogue-info');
+    const nodeCount = Object.keys(entry.story.nodes || {}).length;
+
+    info.appendChild(el('span', 'catalogue-title', entry.title || 'Untitled'));
+    info.appendChild(el('span', 'catalogue-meta',
+      new Date(entry.savedAt).toLocaleString() + ' · ' +
+      nodeCount + ' node' + (nodeCount !== 1 ? 's' : '')));
+    card.appendChild(info);
+
+    const actions  = el('div', 'catalogue-actions');
+    const loadBtn  = el('button', 'btn-secondary', 'Load');
+    loadBtn.addEventListener('click', () => loadFromCatalogue(entry));
+    const delBtn   = el('button', 'btn-danger-sm', 'Delete');
+    delBtn.addEventListener('click', () => deleteFromCatalogue(entry.id));
+    actions.appendChild(loadBtn);
+    actions.appendChild(delBtn);
+    card.appendChild(actions);
+
+    list.appendChild(card);
+  });
 }
